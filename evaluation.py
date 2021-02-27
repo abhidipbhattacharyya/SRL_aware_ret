@@ -215,6 +215,18 @@ def evalrank(model_path, tsv_data, data_json, data_path=None, split='test', fold
         print("Image to text: %.1f %.1f %.1f %.1f %.1f" % r)
         print("Average t2i Recall: %.1f" % ari)
         print("Text to image: %.1f %.1f %.1f %.1f %.1f" % ri)
+
+
+        r, rt = i2t_exact(img_embs, cap_embs, cap_lens, sims, return_ranks=True)
+        ri, rti = t2i_exact(img_embs, cap_embs, cap_lens, sims, return_ranks=True)
+        ar = (r[0] + r[1] + r[2]) / 3
+        ari = (ri[0] + ri[1] + ri[2]) / 3
+        rsum = r[0] + r[1] + r[2] + ri[0] + ri[1] + ri[2]
+        print("rsum: %.1f" % rsum)
+        print("Average i2t Recall: %.1f" % ar)
+        print("Image to text: %.1f %.1f %.1f %.1f %.1f" % r)
+        print("Average t2i Recall: %.1f" % ari)
+        print("Text to image: %.1f %.1f %.1f %.1f %.1f" % ri)
     else:
         # 5fold cross-validation, only for MSCOCO
         results = []
@@ -292,7 +304,7 @@ def process_sim(sim, no_prop):
             ac_sim[i][j] = sum
     return ac_sim
 
-def shard_xattn(images, captions, caplens, opt, shard_size=32):
+def shard_xattn(images, captions, caplens, opt, shard_size=128):
     """
     Computer pairwise t2i image-caption distance with locality sharding
     """
@@ -452,14 +464,9 @@ def t2i_any(images, captions, caplens, sims, npts=None, return_ranks=False):
     else:
         return (r1, r5, r10, medr, meanr)
 
-'''
-def t2i(images, captions, caplens, sims, npts=None, return_ranks=False):
+def i2t_exact(images, captions, caplens, sims, npts=None, return_ranks=False):
     """
-    Text->Images (Image Search)
-    Images: (N, n_region, d) matrix of images
-    Captions: (5N, max_n_word, d) matrix of captions
-    CapLens: (5N) array of caption lengths
-    sims: (N, 5N) matrix of similarity im-cap
+    Images->Text (Image Annotation) exact match
 
     images: (5N, p, n_region, d)
     Captions: (5N, p, max_n_word, d)
@@ -467,17 +474,18 @@ def t2i(images, captions, caplens, sims, npts=None, return_ranks=False):
     sims: (5N,5N)
     """
     npts = images.shape[0]
-    ranks = np.zeros(5 * npts)
-    top1 = np.zeros(5 * npts)
-
-    # --> (5N(caption), N(image))
-    sims = sims.T
-
+    ranks = np.zeros(npts)
+    top1 = np.zeros(npts)
     for index in range(npts):
-        for i in range(5):
-            inds = np.argsort(sims[5 * index + i])[::-1]
-            ranks[5 * index + i] = np.where(inds == index)[0][0]
-            top1[5 * index + i] = inds[0]
+        inds = np.argsort(sims[index])[::-1]
+        # Score
+        rank = 1e20
+        #for i in range(5 * index, 5 * index + 5, 1):
+        tmp = np.where(inds == index)[0][0]
+        if tmp < rank:
+            rank = tmp
+        ranks[index] = rank
+        top1[index] = inds[0]
 
     # Compute metrics
     r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
@@ -489,4 +497,30 @@ def t2i(images, captions, caplens, sims, npts=None, return_ranks=False):
         return (r1, r5, r10, medr, meanr), (ranks, top1)
     else:
         return (r1, r5, r10, medr, meanr)
-'''
+
+
+    sims = sims.T
+
+    for index in range(npts):
+        inds = np.argsort(sims[index])[::-1]
+        # Score
+        rank = 1e20
+        #for i in range(5 * index, 5 * index + 5, 1):
+        tmp = np.where(inds == index)[0][0]
+        if tmp < rank:
+            rank = tmp
+        ranks[index] = rank
+        top1[index] = inds[0]
+
+
+    # Compute metrics
+    r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    r5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+    r10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    medr = np.floor(np.median(ranks)) + 1
+    meanr = ranks.mean() + 1
+    if return_ranks:
+        return (r1, r5, r10, medr, meanr), (ranks, top1)
+    else:
+        return (r1, r5, r10, medr, meanr)
+

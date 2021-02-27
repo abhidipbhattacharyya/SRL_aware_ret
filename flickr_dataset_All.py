@@ -241,14 +241,14 @@ def get_dataloader(train_data, val_data, opt):
 
     val_loader = torch.utils.data.DataLoader(
             val_data,
-            batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers, collate_fn=collate_fn, pin_memory=True)
+            batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers, collate_fn=collate_fn, pin_memory=True)
 
     return train_loader, val_loader
 
 def get_test_loader(test_data, opt):
     test_loader = torch.utils.data.DataLoader(
             test_data,
-            batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers, collate_fn=collate_fn, pin_memory=True)
+            batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers, collate_fn=collate_fn, pin_memory=True)
 
     return test_loader
 

@@ -14,7 +14,7 @@ img_data.extend(load_obj_tsv(tsv_path2, topk=None))
 img_data.extend(load_obj_tsv(tsv_path3, topk=None))
 
 data_path = '/data/abhidip/MM_SRL_data/flickr/entity/flickr30k_entities-master/'
-model_path = '/data/abhidip/MM_SRL_data/flickr/models/SRL_aware_ret/checkpoint/model_best.pth.tar'
+model_path = '/data/abhidip/MM_SRL_data/flickr/models/SRL_aware_ret/checkpoint/no_gcn/model_best.pth.tar'
 data_json ='/data/abhidip/MM_SRL_data/flickr/flickrdata_VN_SRL_martha_BBOX2.json'# data_json = '/media/abhidip/2F1499756FA9B115/data/flickr/abhidip_splits/flickrdata_VN_SRL_martha_BBOX2.json'
 
 evaluation.evalrank(model_path,img_data, data_json, data_path=data_path, split="test")

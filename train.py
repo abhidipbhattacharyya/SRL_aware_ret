@@ -17,8 +17,8 @@ import numpy
 import json,os
 from flickr_dataset_All import *
 from vocab import Vocabulary, deserialize_vocab, from_txt_vocab
-from model_bfan import SCAN
 #from model_bfan import SCAN
+from GCN_model_ret import SCAN
 from evaluation import i2t_any, t2i_any, AverageMeter, LogCollector, encode_data, shard_xattn_t2i, shard_xattn_i2t, shard_xattn
 from torch.autograd import Variable
 from tsv_utils import *
@@ -90,7 +90,7 @@ def main():
     parser.add_argument('--cross_attn', default="both",
                         help='t2i|i2t|both')
     parser.add_argument('--precomp_enc_type', default="basic",
-                        help='basic|weight_norm')
+                        help='basic|GCN')
     parser.add_argument('--bi_gru', action='store_true',
                         help='Use bidirectional GRU.')
     parser.add_argument('--lambda_lse', default=6., type=float,
@@ -247,11 +247,11 @@ def validate(opt, val_loader, model):
 
     start = time.time()
     if opt.cross_attn == 't2i':
-        sims = shard_xattn_t2i(img_embs, cap_embs, cap_lens, opt, shard_size=32)
+        sims = shard_xattn_t2i(img_embs, cap_embs, cap_lens, opt, shard_size=128)
     elif opt.cross_attn == 'i2t':
-        sims = shard_xattn_i2t(img_embs, cap_embs, cap_lens, opt, shard_size=32)
+        sims = shard_xattn_i2t(img_embs, cap_embs, cap_lens, opt, shard_size=128)
     elif opt.cross_attn == 'both':
-        sims = shard_xattn(img_embs, cap_embs, cap_lens, opt, shard_size=32)
+        sims = shard_xattn(img_embs, cap_embs, cap_lens, opt, shard_size=128)
     else:
         raise NotImplementedError
     end = time.time()
