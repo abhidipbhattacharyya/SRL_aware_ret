@@ -169,7 +169,7 @@ class GCN_encoder(nn.Module):
             if name in own_state:
                 new_state[name] = param
 
-        super(EncoderImagePrecompAttn, self).load_state_dict(new_state)
+        super(GCN_encoder, self).load_state_dict(new_state)
 
 class EncoderImagePrecomp(nn.Module):
 
@@ -788,7 +788,7 @@ class SCAN(object):
         cap_emb, cap_lens = self.txt_enc(captions,w_type_padded, lengths)
         
         if self.opt.precomp_enc_type == "GCN":
-            img_emb = img_emb[1]#GCN_emd
+            img_emb = img_emb[1]#1 for GCN_emd, 0  for rnn
 
         return img_emb, cap_emb, cap_lens
 

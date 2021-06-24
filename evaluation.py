@@ -17,7 +17,8 @@ import time
 import numpy as np
 from vocab import Vocabulary, deserialize_vocab, from_txt_vocab
 import torch
-from model_bfan import SCAN, xattn_score_t2i, xattn_score_i2t, xattn_score
+from GCN_model_ret import SCAN, xattn_score_t2i, xattn_score_i2t, xattn_score
+#from model_bfan import SCAN, xattn_score_t2i, xattn_score_i2t, xattn_score
 #from model import SCAN, xattn_score_t2i, xattn_score_i2t
 from collections import OrderedDict
 import time
@@ -157,8 +158,10 @@ def evalrank(model_path, tsv_data, data_json, data_path=None, split='test', fold
     used for evaluation.
     """
     # load model and options
+    print("loading model from {}".format(model_path))
     checkpoint = torch.load(model_path)
     opt = checkpoint['opt']
+    print("model was saved at {}".format(checkpoint['epoch']))
     print(opt)
     if data_path is not None:
         opt.data_path = data_path
@@ -212,9 +215,9 @@ def evalrank(model_path, tsv_data, data_json, data_path=None, split='test', fold
         rsum = r[0] + r[1] + r[2] + ri[0] + ri[1] + ri[2]
         print("rsum: %.1f" % rsum)
         print("Average i2t Recall: %.1f" % ar)
-        print("Image to text: %.1f %.1f %.1f %.1f %.1f" % r)
+        print("Image to text:%.1f %.1f %.1f %.1f %.1f %.1f" % r)
         print("Average t2i Recall: %.1f" % ari)
-        print("Text to image: %.1f %.1f %.1f %.1f %.1f" % ri)
+        print("Text to image:%.1f %.1f %.1f %.1f %.1f %.1f"% ri)
 
 
         r, rt = i2t_exact(img_embs, cap_embs, cap_lens, sims, return_ranks=True)
@@ -224,9 +227,11 @@ def evalrank(model_path, tsv_data, data_json, data_path=None, split='test', fold
         rsum = r[0] + r[1] + r[2] + ri[0] + ri[1] + ri[2]
         print("rsum: %.1f" % rsum)
         print("Average i2t Recall: %.1f" % ar)
-        print("Image to text: %.1f %.1f %.1f %.1f %.1f" % r)
+        print("Image to text: %.1f %.1f %.1f %.1f %.1f %.1f" % r)
         print("Average t2i Recall: %.1f" % ari)
         print("Text to image: %.1f %.1f %.1f %.1f %.1f" % ri)
+
+        filewrite(img_embs, cap_embs, cap_lens, sims, test_dataset.data)
     else:
         # 5fold cross-validation, only for MSCOCO
         results = []
@@ -333,6 +338,8 @@ def shard_xattn(images, captions, caplens, opt, shard_size=128):
             sim,_, _ = xattn_score(im, s, l, opt, mode='dev')
             ac_sim = process_sim(sim.cpu().numpy(), no_prop)
             d[im_start:im_end, cap_start:cap_end] = ac_sim
+            #break
+        #break
     sys.stdout.write('\n')
     return d
 
@@ -412,14 +419,16 @@ def i2t_any(images, captions, caplens, sims, npts=None, return_ranks=False):
 
     # Compute metrics
     r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    r3 = 100.0 * len(np.where(ranks < 3)[0]) / len(ranks)
     r5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
     r10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
     medr = np.floor(np.median(ranks)) + 1
     meanr = ranks.mean() + 1
+    print('i2t r3:{}'.format(r3))
     if return_ranks:
-        return (r1, r5, r10, medr, meanr), (ranks, top1)
+        return (r1, r3,  r5, r10, medr, meanr), (ranks, top1)
     else:
-        return (r1, r5, r10, medr, meanr)
+        return (r1, r3, r5, r10, medr, meanr)
 
 
 def t2i_any(images, captions, caplens, sims, npts=None, return_ranks=False):
@@ -455,14 +464,16 @@ def t2i_any(images, captions, caplens, sims, npts=None, return_ranks=False):
 
     # Compute metrics
     r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    r3 = 100.0 * len(np.where(ranks < 3)[0]) / len(ranks)
     r5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
     r10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
     medr = np.floor(np.median(ranks)) + 1
     meanr = ranks.mean() + 1
+    print('t2i  r3:{}'.format(r3))
     if return_ranks:
-        return (r1, r5, r10, medr, meanr), (ranks, top1)
+        return (r1, r3, r5, r10, medr, meanr), (ranks, top1)
     else:
-        return (r1, r5, r10, medr, meanr)
+        return (r1, r3, r5, r10, medr, meanr)
 
 def i2t_exact(images, captions, caplens, sims, npts=None, return_ranks=False):
     """
@@ -524,3 +535,91 @@ def i2t_exact(images, captions, caplens, sims, npts=None, return_ranks=False):
     else:
         return (r1, r5, r10, medr, meanr)
 
+
+def t2i_exact(images, captions, caplens, sims, npts=None, return_ranks=False):
+    """
+    Text->Images (Image Search) exact match
+    images: (5N, p, n_region, d)
+    Captions: (5N, p, max_n_word, d)
+    caplens:5N
+    sims: (5N,5N)
+    """
+    npts = captions.shape[0]
+    ranks = np.zeros(npts)
+    top1 = np.zeros(npts)
+
+    # --> (5N(caption), N(image))
+    sims = sims.T
+
+    for index in range(npts):
+        inds = np.argsort(sims[index])[::-1]
+        # Score
+        rank = 1e20
+        #for i in range(5 * index, 5 * index + 5, 1):
+        tmp = np.where(inds == index)[0][0]
+        if tmp < rank:
+            rank = tmp
+        ranks[index] = rank
+        top1[index] = inds[0]
+
+
+    # Compute metrics
+    r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+    r5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+    r10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    medr = np.floor(np.median(ranks)) + 1
+    meanr = ranks.mean() + 1
+    if return_ranks:
+        return (r1, r5, r10, medr, meanr), (ranks, top1)
+    else:
+        return (r1, r5, r10, medr, meanr)
+
+
+def filewrite(images, captions, caplens, sims, rawdata ):
+    """
+    Images->Text (Image Annotation) any of the 5 caption
+
+
+    images: (5N, p, n_region, d)
+    Captions: (5N, p, max_n_word, d)
+    caplens:5N
+    sims: (5N,5N)
+    """
+    npts = images.shape[0]
+    ranks = np.zeros(npts)
+
+    image_caption = []
+    for index in range(npts):
+        inds = np.argsort(sims[index])[::-1]
+        image_caption.append(inds[:5]) #take  top 5
+
+
+    ret_result = {}
+    for i, ind in enumerate(image_caption):
+        data =  rawdata[i]
+        image_name  = data["image"]
+        caption = data["caption"]
+        ret_cap = [rawdata[j]["caption"] for j in ind]
+        img_id = image_name + "_" + str(i%5)+".jpg"
+        ret_result[img_id] = {"image":img_id, "caption":caption, "ret_cap":ret_cap }
+
+
+    npts = captions.shape[0]
+    ranks = np.zeros(npts)
+    sims = sims.T
+    caption_image = []
+    for index in range(npts):
+        inds = np.argsort(sims[index])[::-1]
+        caption_image.append(inds[:5])
+
+    for i, ind in enumerate(caption_image):
+        data =  rawdata[i]
+        image_name  = data["image"]
+        caption = data["caption"]
+        ret_img = [rawdata[j]["image"]+"_"+str(j%5)+".jpg" for j in ind]
+        img_id = image_name + "_" + str(i%5)+".jpg"
+        ret_result[img_id]["ret_img"] = ret_img
+
+
+    with open("ret_op.json", "w") as f:
+        json.dump(list(ret_result.values()), f, indent=4)
